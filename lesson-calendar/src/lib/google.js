@@ -1,4 +1,4 @@
-const GSI_URL = "https://accounts.google.com/gsi/client";
+﻿const GSI_URL = "https://accounts.google.com/gsi/client";
 const GAPI_URL = "https://apis.google.com/js/api.js";
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
@@ -199,7 +199,7 @@ export async function listMonthEvents({ timeMin, timeMax }) {
   }
 }
 
-export async function insertEvent({ summary, description, startISO, endISO, reminders }) {
+export async function insertEvent({ summary, description, startISO, endISO, reminders, colorId }) {
   await loadPromise;
   ensureInitialized();
   requireAuth();

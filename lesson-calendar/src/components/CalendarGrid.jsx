@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+﻿import { useMemo } from "react";
 import dayjs from "dayjs";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { WEEKDAYS } from "../lib/ui";
@@ -72,11 +72,26 @@ export default function CalendarGrid({ month, events, loading, error, connected,
                     key={event.id}
                     className="rounded-xl border px-3 py-2 text-xs"
                     title={event.summary}
-                    style={{ backgroundColor: "var(--theme-surface)", borderColor: "var(--theme-border)", color: "var(--theme-text)" }}
+                    style={{
+                      backgroundColor: "var(--theme-surface)",
+                      borderColor: event.colorHex || "var(--theme-border)",
+                      color: "var(--theme-text)",
+                    }}
                   >
-                    <div className="font-medium">{event.summary}</div>
-                    <div className="mt-1 text-[11px] text-slate-300/80">
-                      {event.isAllDay ? "All day" : dayjs(event.startISO).format("HH:mm")}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {event.colorHex && (
+                          <span
+                            className="inline-flex h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: event.colorHex }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="font-medium line-clamp-1">{event.summary}</span>
+                      </div>
+                      <span className="text-[11px] text-slate-300/80">
+                        {event.isAllDay ? "All day" : dayjs(event.startISO).format("HH:mm")}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -124,3 +139,4 @@ function useMemoEvents(events) {
     return map;
   }, [events]);
 }
+

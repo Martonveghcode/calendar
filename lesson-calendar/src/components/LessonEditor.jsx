@@ -1,7 +1,8 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import { WEEKDAYS } from "../lib/ui";
-import { cloneLesson } from "../lib/events";
+import { GOOGLE_COLORS } from "../lib/constants";
+import { cloneLesson, resolveLessonColorHex, resolveLessonColorId } from "../lib/events";
 
 export default function LessonEditor({ lesson, onSave, onCancel, onDelete }) {
   const [draft, setDraft] = useState(() => cloneLesson(lesson));
@@ -13,6 +14,8 @@ export default function LessonEditor({ lesson, onSave, onCancel, onDelete }) {
   }, [lesson]);
 
   const isNew = !lesson?.id;
+  const selectedColorId = draft.colorId || resolveLessonColorId(draft);
+  const selectedColorHex = useMemo(() => resolveLessonColorHex(draft), [draft]);
 
   const updateSlot = (index, patch) => {
     setDraft((prev) => {
@@ -57,10 +60,13 @@ export default function LessonEditor({ lesson, onSave, onCancel, onDelete }) {
       setError("Each slot needs a valid start/end time");
       return;
     }
+    const colorId = resolveLessonColorId(draft) || "9";
+    const colorHex = resolveLessonColorHex({ ...draft, colorId });
     onSave({
       ...draft,
       name,
-      color: draft.color || "#38bdf8",
+      colorId,
+      color: colorHex,
       slots: draft.slots.map((slot) => ({
         weekday: Number(slot.weekday),
         start: slot.start,
@@ -107,17 +113,34 @@ export default function LessonEditor({ lesson, onSave, onCancel, onDelete }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="lesson-color">
-                Accent color
-              </label>
-              <input
-                id="lesson-color"
-                type="color"
-                value={draft.color}
-                onChange={(event) => setDraft((prev) => ({ ...prev, color: event.target.value }))}
-                className="h-10 w-full cursor-pointer rounded-xl border"
-                style={{ borderColor: "var(--theme-border)", backgroundColor: "var(--theme-background)" }}
-              />
+              <label className="text-sm font-medium">Google event color</label>
+              <div className="rounded-2xl border p-3" style={{ borderColor: "var(--theme-border)", backgroundColor: "var(--theme-background)" }}>
+                <div className="mb-3 flex items-center gap-2 text-xs text-slate-300/80">
+                  <span className="inline-flex h-3 w-3 rounded-full" style={{ backgroundColor: selectedColorHex }} />
+                  {GOOGLE_COLORS.find((color) => color.id === selectedColorId)?.name || "Blue"}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {GOOGLE_COLORS.map((color) => {
+                    const isSelected = color.id === selectedColorId;
+                    return (
+                      <button
+                        key={color.id}
+                        type="button"
+                        onClick={() => setDraft((prev) => ({ ...prev, colorId: color.id }))}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition ${isSelected ? "shadow-soft" : "opacity-80"}`}
+                        style={{
+                          borderColor: isSelected ? "var(--theme-accent)" : "var(--theme-border)",
+                          backgroundColor: "var(--theme-surface)",
+                          color: "var(--theme-text)",
+                        }}
+                      >
+                        <span className="inline-flex h-4 w-4 flex-shrink-0 rounded-full" style={{ backgroundColor: color.hex }} />
+                        {color.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 

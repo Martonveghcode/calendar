@@ -8,6 +8,8 @@ import {
   formatDateOption,
   buildSummary,
   buildDescription,
+  resolveLessonColorHex,
+  resolveLessonColorId,
 } from "../lib/events";
 
 export default function CreateEventPanel({ lessons, onCreate, isConnected, isSubmitting, feedback }) {
@@ -49,6 +51,7 @@ export default function CreateEventPanel({ lessons, onCreate, isConnected, isSub
   const selectedLesson = lessons.find((lesson) => lesson.id === lessonId);
   const slots = selectedLesson?.slots || [];
   const chosenSlot = slots[Number(slotIndex)] || null;
+  const lessonColorHex = selectedLesson ? resolveLessonColorHex(selectedLesson) : null;
 
   const availableDates = useMemo(() => generateUpcomingDates(chosenSlot), [chosenSlot]);
 
@@ -125,6 +128,7 @@ export default function CreateEventPanel({ lessons, onCreate, isConnected, isSub
       notes,
       eventTypes: EVENT_TYPES,
     });
+    const colorId = resolveLessonColorId(selectedLesson);
 
     let reminders = null;
     if (eventType === "test" || eventType === "homework") {
@@ -148,6 +152,7 @@ export default function CreateEventPanel({ lessons, onCreate, isConnected, isSub
       startISO: start.toISOString(),
       endISO: end.toISOString(),
       reminders,
+      colorId,
     });
 
     if (success) {
@@ -169,21 +174,30 @@ export default function CreateEventPanel({ lessons, onCreate, isConnected, isSub
           <label className="text-sm font-medium" htmlFor="event-lesson">
             Lesson
           </label>
-          <select
-            id="event-lesson"
-            value={lessonId}
-            onChange={(event) => setLessonId(event.target.value)}
-            className="w-full rounded-xl border px-4 py-2 text-sm disabled:opacity-60"
-            style={{ backgroundColor: "var(--theme-background)", borderColor: "var(--theme-border)", color: "var(--theme-text)" }}
-            disabled={!lessons.length}
-          >
-            {!lessons.length && <option value="">No lessons yet</option>}
-            {lessons.map((lesson) => (
-              <option key={lesson.id} value={lesson.id}>
-                {lesson.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-3">
+            <select
+              id="event-lesson"
+              value={lessonId}
+              onChange={(event) => setLessonId(event.target.value)}
+              className="w-full rounded-xl border px-4 py-2 text-sm disabled:opacity-60"
+              style={{ backgroundColor: "var(--theme-background)", borderColor: "var(--theme-border)", color: "var(--theme-text)" }}
+              disabled={!lessons.length}
+            >
+              {!lessons.length && <option value="">No lessons yet</option>}
+              {lessons.map((lesson) => (
+                <option key={lesson.id} value={lesson.id}>
+                  {lesson.name}
+                </option>
+              ))}
+            </select>
+            {lessonColorHex && (
+              <span
+                className="inline-flex h-6 w-6 flex-shrink-0 rounded-full border"
+                style={{ backgroundColor: lessonColorHex, borderColor: "var(--theme-border)" }}
+                aria-hidden="true"
+              />
+            )}
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import {
@@ -17,7 +17,8 @@ import {
   setPrefs,
 } from "./lib/storage";
 import { uid } from "./lib/ui";
-import { DEFAULT_THEME } from "./lib/constants";
+import { DEFAULT_THEME, GOOGLE_COLOR_MAP } from "./lib/constants";
+import { resolveLessonColorHex, resolveLessonColorId } from "./lib/events";
 import LessonsPanel from "./components/LessonsPanel";
 import CreateEventPanel from "./components/CreateEventPanel";
 import CalendarGrid from "./components/CalendarGrid";
@@ -44,13 +45,22 @@ const hydratePrefs = (stored) => {
   };
 };
 
+const normalizeLesson = (lesson) => {
+  if (!lesson) return lesson;
+  const colorId = resolveLessonColorId(lesson);
+  return {
+    ...lesson,
+    colorId,
+    color: resolveLessonColorHex({ ...lesson, colorId }),
+  };
+};
 export default function App() {
   const [cfg, setCfgState] = useState(() => getCfg());
   const [setupOpen, setSetupOpen] = useState(() => {
     const stored = getCfg();
     return !stored?.clientId || !stored?.apiKey;
   });
-  const [lessons, setLessonsState] = useState(() => getLessons());
+  const [lessons, setLessonsState] = useState(() => getLessons().map(normalizeLesson));
   const [prefs, setPrefsState] = useState(() => hydratePrefs(getPrefs()));
   const [editingLesson, setEditingLesson] = useState(null);
 
@@ -168,6 +178,8 @@ export default function App() {
         const mapped = (items || []).map((item) => {
           const startISO = item.start.dateTime || item.start.date;
           const endISO = item.end?.dateTime || item.end?.date || startISO;
+          const colorId = item.colorId || null;
+          const colorHex = colorId ? GOOGLE_COLOR_MAP[colorId]?.hex || null : null;
           return {
             id: item.id,
             summary: item.summary || "(No title)",
@@ -175,6 +187,8 @@ export default function App() {
             startISO,
             endISO,
             isAllDay: !item.start.dateTime,
+            colorId,
+            colorHex,
           };
         });
         mapped.sort((a, b) => dayjs(a.startISO).valueOf() - dayjs(b.startISO).valueOf());
@@ -251,10 +265,13 @@ export default function App() {
     const now = dayjs();
     const start = now.add(1, "hour").startOf("hour");
     const end = start.add(1, "hour");
+    const defaultColorId = "9";
+    const defaultColor = GOOGLE_COLOR_MAP[defaultColorId]?.hex || "#5484ed";
     setEditingLesson({
       id: null,
       name: "",
-      color: "#38bdf8",
+      colorId: defaultColorId,
+      color: defaultColor,
       slots: [
         {
           weekday: now.day(),
@@ -266,10 +283,14 @@ export default function App() {
   }, []);
 
   const handleSaveLesson = useCallback((draft) => {
+    const colorId = resolveLessonColorId(draft);
+    const color = resolveLessonColorHex({ ...draft, colorId });
     const lesson = {
       ...draft,
       id: draft.id || uid("lesson"),
       name: draft.name.trim(),
+      colorId,
+      color,
       slots: draft.slots.map((slot) => ({
         weekday: Number(slot.weekday),
         start: slot.start,
@@ -292,12 +313,12 @@ export default function App() {
   }, []);
 
   const handleCreateEvent = useCallback(
-    async ({ summary, description, startISO, endISO, reminders }) => {
+    async ({ summary, description, startISO, endISO, reminders, colorId }) => {
       setEventSubmitting(true);
       setEventFeedback(null);
       let success = false;
       try {
-        await insertEvent({ summary, description, startISO, endISO, reminders });
+        await insertEvent({ summary, description, startISO, endISO, reminders, colorId });
         setEventFeedback({ type: "success", message: "Event created in Google Calendar" });
         success = true;
         refreshEvents(true);
@@ -420,3 +441,17 @@ export default function App() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -6,7 +6,6 @@
     "configurations": [
         {
             "request": "launch",
-        "name": "Launch Program",
             "type": "node",
             "program": "${workspaceFolder}/main.ts",
             "cwd": "${workspaceFolder}",
