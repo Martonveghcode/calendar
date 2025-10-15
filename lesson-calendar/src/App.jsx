@@ -54,6 +54,54 @@ const normalizeLesson = (lesson) => {
     color: resolveLessonColorHex({ ...lesson, colorId }),
   };
 };
+
+const sanitizeLessonSlots = (slots = [], lessonIndex) => {
+  if (!Array.isArray(slots)) {
+    return [];
+  }
+  return slots
+    .map((slot, slotIndex) => {
+      if (!slot || typeof slot !== "object") {
+        console.warn(`[import] Ignoring invalid slot at index ${slotIndex} for lesson ${lessonIndex}`);
+        return null;
+      }
+      const weekday = Number(slot.weekday);
+      const start = typeof slot.start === "string" ? slot.start : "";
+      const end = typeof slot.end === "string" ? slot.end : "";
+      if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+        console.warn(`[import] Ignoring slot with invalid weekday at index ${slotIndex} for lesson ${lessonIndex}`);
+        return null;
+      }
+      if (!start || !end) {
+        console.warn(`[import] Ignoring slot with missing time at index ${slotIndex} for lesson ${lessonIndex}`);
+        return null;
+      }
+      return { weekday, start, end };
+    })
+    .filter(Boolean);
+};
+
+const prepareLessonsFromFile = (lessons) => {
+  if (!Array.isArray(lessons)) {
+    throw new Error("Lessons must be an array.");
+  }
+  return lessons.map((lesson, index) => {
+    if (!lesson || typeof lesson !== "object") {
+      throw new Error(`Lesson at index ${index} is not a valid object.`);
+    }
+    const name = typeof lesson.name === "string" ? lesson.name.trim() : "";
+    if (!name) {
+      throw new Error(`Lesson at index ${index} is missing a name.`);
+    }
+    const sanitized = {
+      ...lesson,
+      id: typeof lesson.id === "string" && lesson.id.trim() ? lesson.id.trim() : uid("lesson"),
+      name,
+      slots: sanitizeLessonSlots(lesson.slots, index),
+    };
+    return normalizeLesson(sanitized);
+  });
+};
 export default function App() {
   const [cfg, setCfgState] = useState(() => getCfg());
   const [setupOpen, setSetupOpen] = useState(() => {
@@ -78,6 +126,14 @@ export default function App() {
   const [eventSubmitting, setEventSubmitting] = useState(false);
 
   const theme = useMemo(() => ({ ...DEFAULT_THEME, ...(prefs?.theme || {}) }), [prefs?.theme]);
+  const dataSnapshot = useMemo(
+    () => ({
+      cfg: cfg ? { ...cfg } : null,
+      lessons: lessons.map((lesson) => ({ ...lesson })),
+      prefs: prefs ? { ...prefs } : null,
+    }),
+    [cfg, lessons, prefs]
+  );
 
   const updatePrefs = useCallback((updater) => {
     setPrefsState((prev) => {
@@ -312,6 +368,59 @@ export default function App() {
     setEditingLesson(null);
   }, []);
 
+  const handleImportData = useCallback(
+    (payload) => {
+      if (!payload || typeof payload !== "object") {
+        throw new Error("The file must contain a JSON object.");
+      }
+
+      const applied = [];
+
+      if (Object.prototype.hasOwnProperty.call(payload, "cfg")) {
+        const incomingCfg = payload.cfg;
+        if (incomingCfg === null) {
+          setCfgState(null);
+          applied.push("credentials");
+          handleDisconnect();
+        } else if (incomingCfg && typeof incomingCfg === "object") {
+          const clientId = typeof incomingCfg.clientId === "string" ? incomingCfg.clientId.trim() : "";
+          const apiKey = typeof incomingCfg.apiKey === "string" ? incomingCfg.apiKey.trim() : "";
+          if (!clientId || !apiKey) {
+            throw new Error("Credentials must include non-empty clientId and apiKey strings.");
+          }
+          setCfgState({ clientId, apiKey });
+          applied.push("credentials");
+          handleDisconnect();
+        } else {
+          throw new Error("Credentials section must be an object with clientId and apiKey.");
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(payload, "lessons")) {
+        const nextLessons = prepareLessonsFromFile(payload.lessons);
+        setLessonsState(nextLessons);
+        setEditingLesson(null);
+        applied.push("lessons");
+      }
+
+      if (Object.prototype.hasOwnProperty.call(payload, "prefs")) {
+        const incomingPrefs = payload.prefs;
+        if (incomingPrefs !== null && typeof incomingPrefs !== "object") {
+          throw new Error("Preferences section must be an object or null.");
+        }
+        setPrefsState(hydratePrefs(incomingPrefs));
+        applied.push("preferences");
+      }
+
+      if (!applied.length) {
+        throw new Error("The file does not include any recognized sections (cfg, lessons, prefs).");
+      }
+
+      return applied;
+    },
+    [handleDisconnect]
+  );
+
   const handleCreateEvent = useCallback(
     async ({ summary, description, startISO, endISO, reminders, colorId }) => {
       setEventSubmitting(true);
@@ -428,6 +537,8 @@ export default function App() {
         theme={theme}
         onThemeChange={handleThemeChange}
         onThemeReset={handleThemeReset}
+        dataSnapshot={dataSnapshot}
+        onImportData={handleImportData}
       />
 
       {editingLesson && (

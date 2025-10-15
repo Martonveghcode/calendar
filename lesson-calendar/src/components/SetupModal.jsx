@@ -1,5 +1,5 @@
-﻿import { useEffect, useState } from "react";
-import { Save, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Download, Save, Upload, X } from "lucide-react";
 
 function ThemeInput({ label, value, onChange }) {
   const normalized = value.startsWith("#") && (value.length === 4 || value.length === 7) ? value : "#000000";
@@ -28,11 +28,25 @@ function ThemeInput({ label, value, onChange }) {
   );
 }
 
-export default function SetupModal({ open, values, onSave, onClose, theme, onThemeChange, onThemeReset }) {
+export default function SetupModal({
+  open,
+  values,
+  onSave,
+  onClose,
+  theme,
+  onThemeChange,
+  onThemeReset,
+  dataSnapshot,
+  onImportData,
+}) {
   const [clientId, setClientId] = useState(values?.clientId || "");
   const [apiKey, setApiKey] = useState(values?.apiKey || "");
   const [error, setError] = useState("");
   const [draftTheme, setDraftTheme] = useState(theme);
+  const [importError, setImportError] = useState("");
+  const [importSuccess, setImportSuccess] = useState("");
+  const fileInputRef = useRef(null);
+  const formattedSnapshot = useMemo(() => JSON.stringify(dataSnapshot ?? {}, null, 2), [dataSnapshot]);
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +54,8 @@ export default function SetupModal({ open, values, onSave, onClose, theme, onThe
     setApiKey(values?.apiKey || "");
     setDraftTheme(theme);
     setError("");
+    setImportError("");
+    setImportSuccess("");
   }, [open, values, theme]);
 
   if (!open) return null;
@@ -56,6 +72,61 @@ export default function SetupModal({ open, values, onSave, onClose, theme, onThe
   const handleThemeSubmit = (event) => {
     event.preventDefault();
     onThemeChange(draftTheme);
+  };
+
+  const handleExport = () => {
+    try {
+      const payload = formattedSnapshot || "{}";
+      const blob = new Blob([payload], { type: "application/json" });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `lesson-calendar-data-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+      setImportSuccess("Download started.");
+      setImportError("");
+    } catch (downloadError) {
+      setImportError(downloadError.message || "Failed to start download.");
+      setImportSuccess("");
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(formattedSnapshot || "{}");
+      setImportSuccess("Copied data to clipboard.");
+      setImportError("");
+    } catch (copyError) {
+      setImportError(copyError.message || "Failed to copy data to clipboard.");
+      setImportSuccess("");
+    }
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    setImportError("");
+    setImportSuccess("");
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (typeof onImportData !== "function") {
+        throw new Error("Import is not available.");
+      }
+      const result = onImportData(parsed);
+      if (Array.isArray(result) && result.length) {
+        setImportSuccess(`Imported ${result.join(", ")}.`);
+      } else {
+        setImportSuccess("Import completed.");
+      }
+    } catch (importErr) {
+      setImportError(importErr.message || "Failed to import data.");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   return (
@@ -198,6 +269,86 @@ export default function SetupModal({ open, values, onSave, onClose, theme, onThe
               </button>
             </div>
           </form>
+
+          <section className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold">Data backup</h3>
+              <p className="text-sm text-slate-300/80">
+                Download or import your credentials, lessons, and preferences. Inspect the JSON below before saving it.
+              </p>
+            </div>
+            <textarea
+              readOnly
+              value={formattedSnapshot}
+              className="min-h-[200px] w-full rounded-xl border px-4 py-3 text-xs font-mono leading-5"
+              style={{
+                backgroundColor: "var(--theme-background)",
+                borderColor: "var(--theme-border)",
+                color: "var(--theme-text)",
+              }}
+            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition"
+                  style={{
+                    borderColor: "var(--theme-border)",
+                    backgroundColor: "var(--theme-background)",
+                    color: "var(--theme-text)",
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                  Download JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition"
+                  style={{
+                    borderColor: "var(--theme-border)",
+                    backgroundColor: "var(--theme-background)",
+                    color: "var(--theme-text)",
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy JSON
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-accent flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition"
+              >
+                <Upload className="h-4 w-4" />
+                Import from file
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+            {importError && (
+              <div
+                className="rounded-xl border px-4 py-3 text-sm"
+                style={{ borderColor: "#f97316", color: "#fed7aa", backgroundColor: "var(--theme-background)" }}
+              >
+                {importError}
+              </div>
+            )}
+            {importSuccess && (
+              <div
+                className="rounded-xl border px-4 py-3 text-sm"
+                style={{ borderColor: "var(--theme-border)", color: "var(--theme-text)", backgroundColor: "var(--theme-surface)" }}
+              >
+                {importSuccess}
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>
