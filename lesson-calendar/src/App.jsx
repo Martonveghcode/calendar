@@ -7,6 +7,7 @@ import {
   signOut,
   listMonthEvents,
   insertEvent,
+  listCalendars,
 } from "./lib/google";
 import {
   getCfg,
@@ -29,6 +30,9 @@ const defaultPrefs = () => ({
   monthCursor: dayjs().startOf("month").format("YYYY-MM-DD"),
   theme: { ...DEFAULT_THEME },
 });
+
+const TEST_CALENDAR_NAME = "TESTS";
+const TEST_EVENT_COLOR_HEX = "#ffffff";
 
 const hydratePrefs = (stored) => {
   const base = defaultPrefs();
@@ -117,6 +121,9 @@ export default function App() {
   const [googleError, setGoogleError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
+
+  const [testCalendarId, setTestCalendarId] = useState(null);
+  const [testCalendarLookupAttempted, setTestCalendarLookupAttempted] = useState(false);
 
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -227,40 +234,99 @@ export default function App() {
       try {
         const rangeStart = month.startOf("month").startOf("week");
         const rangeEnd = month.endOf("month").endOf("week");
-        const items = await listMonthEvents({
-          timeMin: rangeStart.toISOString(),
-          timeMax: rangeEnd.toISOString(),
-        });
-        const mapped = (items || []).map((item) => {
-          const startISO = item.start.dateTime || item.start.date;
-          const endISO = item.end?.dateTime || item.end?.date || startISO;
-          const colorId = item.colorId || null;
-          const colorHex = colorId ? GOOGLE_COLOR_MAP[colorId]?.hex || null : null;
-          return {
-            id: item.id,
-            summary: item.summary || "(No title)",
-            description: item.description || "",
-            startISO,
-            endISO,
-            isAllDay: !item.start.dateTime,
-            colorId,
-            colorHex,
-          };
-        });
-        mapped.sort((a, b) => dayjs(a.startISO).valueOf() - dayjs(b.startISO).valueOf());
-        setCalendarEvents(mapped);
+        const sources = [{ id: "primary", label: "Primary" }];
+        if (testCalendarId) {
+          sources.push({ id: testCalendarId, label: TEST_CALENDAR_NAME });
+        }
+        const aggregated = [];
+        let secondaryError = "";
+        for (const source of sources) {
+          const isTestCalendar = Boolean(testCalendarId && source.id === testCalendarId);
+          try {
+            const items = await listMonthEvents({
+              timeMin: rangeStart.toISOString(),
+              timeMax: rangeEnd.toISOString(),
+              calendarId: source.id,
+            });
+            const mapped = (items || []).map((item) => {
+              const startISO = item.start.dateTime || item.start.date;
+              const endISO = item.end?.dateTime || item.end?.date || startISO;
+              const colorId = item.colorId || null;
+              let colorHex = colorId ? GOOGLE_COLOR_MAP[colorId]?.hex || null : null;
+              if (isTestCalendar) {
+                colorHex = TEST_EVENT_COLOR_HEX;
+              }
+              const baseId = item.id || `${startISO}-${endISO}-${Math.random().toString(36).slice(2, 8)}`;
+              return {
+                id: `${source.id}:${baseId}`,
+                googleEventId: item.id || null,
+                calendarId: source.id,
+                calendarSummary: source.label,
+                summary: item.summary || "(No title)",
+                description: item.description || "",
+                startISO,
+                endISO,
+                isAllDay: !item.start.dateTime,
+                colorId: isTestCalendar ? null : colorId,
+                colorHex,
+                isTestEvent: isTestCalendar,
+              };
+            });
+            aggregated.push(...mapped);
+          } catch (sourceError) {
+            if (source.id === "primary") {
+              throw sourceError;
+            }
+            secondaryError = sourceError.message || `Failed to load events from ${TEST_CALENDAR_NAME} calendar`;
+          }
+        }
+        aggregated.sort((a, b) => dayjs(a.startISO).valueOf() - dayjs(b.startISO).valueOf());
+        setCalendarEvents(aggregated);
+        if (secondaryError) {
+          setEventsError(secondaryError);
+        }
       } catch (error) {
         setEventsError(error.message || "Failed to load calendar events");
+        setCalendarEvents([]);
       } finally {
         setEventsLoading(false);
       }
     },
-    [connected, googleReady, month]
+    [connected, googleReady, month, testCalendarId]
   );
 
   useEffect(() => {
     refreshEvents();
   }, [refreshEvents]);
+
+  const locateTestCalendar = useCallback(async () => {
+    try {
+      const calendars = await listCalendars();
+      const match = calendars.find((calendar) => (calendar.summary || "").trim().toLowerCase() === TEST_CALENDAR_NAME.toLowerCase());
+      const foundId = match?.id || null;
+      setTestCalendarId(foundId);
+      setTestCalendarLookupAttempted(true);
+      return foundId;
+    } catch (error) {
+      setTestCalendarId(null);
+      setTestCalendarLookupAttempted(true);
+      throw error;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!connected) {
+      setTestCalendarId(null);
+      setTestCalendarLookupAttempted(false);
+      return;
+    }
+    if (testCalendarLookupAttempted) {
+      return;
+    }
+    locateTestCalendar().catch((error) => {
+      console.warn(`[calendar] Failed to locate ${TEST_CALENDAR_NAME} calendar`, error);
+    });
+  }, [connected, locateTestCalendar, testCalendarLookupAttempted]);
 
   useEffect(() => {
     if (!eventFeedback) return;
@@ -294,6 +360,8 @@ export default function App() {
       /* ignore */
     }
     setConnected(false);
+    setTestCalendarId(null);
+    setTestCalendarLookupAttempted(false);
     setCalendarEvents([]);
   }, []);
 
@@ -422,13 +490,43 @@ export default function App() {
   );
 
   const handleCreateEvent = useCallback(
-    async ({ summary, description, startISO, endISO, reminders, colorId }) => {
+    async ({ summary, description, startISO, endISO, reminders, colorId, eventType }) => {
       setEventSubmitting(true);
       setEventFeedback(null);
       let success = false;
       try {
-        await insertEvent({ summary, description, startISO, endISO, reminders, colorId });
-        setEventFeedback({ type: "success", message: "Event created in Google Calendar" });
+        let targetCalendarId = "primary";
+        if (eventType === "test") {
+          let calendarIdToUse = testCalendarId;
+          if (!calendarIdToUse) {
+            try {
+              calendarIdToUse = await locateTestCalendar();
+            } catch (calendarLookupError) {
+              throw new Error(calendarLookupError.message || `Failed to locate ${TEST_CALENDAR_NAME} calendar`);
+            }
+          }
+          if (!calendarIdToUse) {
+            throw new Error(`Create a calendar named "${TEST_CALENDAR_NAME}" in Google Calendar to store tests.`);
+          }
+          targetCalendarId = calendarIdToUse;
+        }
+        const insertPayload = {
+          summary,
+          description,
+          startISO,
+          endISO,
+          reminders,
+          calendarId: targetCalendarId,
+        };
+        if (eventType !== "test" && colorId) {
+          insertPayload.colorId = colorId;
+        }
+        await insertEvent(insertPayload);
+        const successMessage =
+          eventType === "test"
+            ? `Test event added to "${TEST_CALENDAR_NAME}" calendar`
+            : "Event created in Google Calendar";
+        setEventFeedback({ type: "success", message: successMessage });
         success = true;
         refreshEvents(true);
       } catch (error) {
@@ -438,7 +536,7 @@ export default function App() {
       }
       return success;
     },
-    [refreshEvents]
+    [locateTestCalendar, refreshEvents, testCalendarId]
   );
 
   const surfaceStyle = useMemo(

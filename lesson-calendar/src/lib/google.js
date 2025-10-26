@@ -178,14 +178,14 @@ function extractError(error) {
   return "Unknown Google API error";
 }
 
-export async function listMonthEvents({ timeMin, timeMax }) {
+export async function listMonthEvents({ timeMin, timeMax, calendarId = "primary" }) {
   await loadPromise;
   ensureInitialized();
   requireAuth();
 
   try {
     const response = await window.gapi.client.calendar.events.list({
-      calendarId: "primary",
+      calendarId,
       singleEvents: true,
       orderBy: "startTime",
       timeMin,
@@ -199,14 +199,14 @@ export async function listMonthEvents({ timeMin, timeMax }) {
   }
 }
 
-export async function insertEvent({ summary, description, startISO, endISO, reminders, colorId }) {
+export async function insertEvent({ summary, description, startISO, endISO, reminders, colorId, calendarId = "primary" }) {
   await loadPromise;
   ensureInitialized();
   requireAuth();
 
   try {
     const response = await window.gapi.client.calendar.events.insert({
-      calendarId: "primary",
+      calendarId,
       resource: {
         summary,
         description,
@@ -218,12 +218,38 @@ export async function insertEvent({ summary, description, startISO, endISO, remi
           dateTime: endISO,
           timeZone: TIME_ZONE,
         },
+        ...(colorId ? { colorId } : {}),
         reminders: reminders && reminders.length
           ? { useDefault: false, overrides: reminders }
           : undefined,
       },
     });
     return response.result;
+  } catch (error) {
+    throw new Error(extractError(error));
+  }
+}
+
+export async function listCalendars() {
+  await loadPromise;
+  ensureInitialized();
+  requireAuth();
+
+  try {
+    const calendars = [];
+    let pageToken;
+    do {
+      const response = await window.gapi.client.calendar.calendarList.list({
+        maxResults: 250,
+        pageToken,
+        showDeleted: false,
+        minAccessRole: "reader",
+      });
+      const items = response.result.items || [];
+      calendars.push(...items);
+      pageToken = response.result.nextPageToken;
+    } while (pageToken);
+    return calendars;
   } catch (error) {
     throw new Error(extractError(error));
   }

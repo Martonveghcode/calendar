@@ -130,9 +130,9 @@ export default function SetupModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-6 backdrop-blur sm:items-center">
       <div
-        className="w-full max-w-2xl rounded-3xl border p-8 shadow-soft"
+        className="w-full max-w-2xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl border p-6 shadow-soft sm:p-8"
         style={{ backgroundColor: "var(--theme-surface)", borderColor: "var(--theme-border)" }}
       >
         <div className="mb-6 flex items-center justify-between">

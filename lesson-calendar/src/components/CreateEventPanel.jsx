@@ -153,6 +153,7 @@ export default function CreateEventPanel({ lessons, onCreate, isConnected, isSub
       endISO: end.toISOString(),
       reminders,
       colorId,
+      eventType,
     });
 
     if (success) {
