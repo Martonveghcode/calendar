@@ -5,7 +5,6 @@ import {
   loadGoogle,
   signIn,
   signOut,
-  listMonthEvents,
   insertEvent,
   listCalendars,
 } from "./lib/google";
@@ -22,17 +21,14 @@ import { DEFAULT_THEME, GOOGLE_COLOR_MAP } from "./lib/constants";
 import { resolveLessonColorHex, resolveLessonColorId } from "./lib/events";
 import LessonsPanel from "./components/LessonsPanel";
 import CreateEventPanel from "./components/CreateEventPanel";
-import CalendarGrid from "./components/CalendarGrid";
 import SetupModal from "./components/SetupModal";
 import LessonEditor from "./components/LessonEditor";
 
 const defaultPrefs = () => ({
-  monthCursor: dayjs().startOf("month").format("YYYY-MM-DD"),
   theme: { ...DEFAULT_THEME },
 });
 
 const TEST_CALENDAR_NAME = "TESTS";
-const TEST_EVENT_COLOR_HEX = "#ffffff";
 
 const hydratePrefs = (stored) => {
   const base = defaultPrefs();
@@ -125,10 +121,6 @@ export default function App() {
   const [testCalendarId, setTestCalendarId] = useState(null);
   const [testCalendarLookupAttempted, setTestCalendarLookupAttempted] = useState(false);
 
-  const [calendarEvents, setCalendarEvents] = useState([]);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const [eventsError, setEventsError] = useState("");
-
   const [eventFeedback, setEventFeedback] = useState(null);
   const [eventSubmitting, setEventSubmitting] = useState(false);
 
@@ -148,11 +140,6 @@ export default function App() {
       return hydratePrefs(next);
     });
   }, []);
-
-  const month = useMemo(() => {
-    const cursor = prefs?.monthCursor || dayjs().startOf("month").format("YYYY-MM-DD");
-    return dayjs(cursor).startOf("month");
-  }, [prefs]);
 
   const sortedLessons = useMemo(() => {
     return [...lessons].sort((a, b) => a.name.localeCompare(b.name));
@@ -211,93 +198,8 @@ export default function App() {
         /* ignore */
       }
       setConnected(false);
-      setCalendarEvents([]);
     }
   }, [cfg]);
-
-  const changeMonth = useCallback(
-    (delta) => {
-      updatePrefs((prev) => {
-        const current = dayjs(prev?.monthCursor || dayjs().startOf("month"));
-        const next = current.add(delta, "month").startOf("month");
-        return { ...prev, monthCursor: next.format("YYYY-MM-DD") };
-      });
-    },
-    [updatePrefs]
-  );
-
-  const refreshEvents = useCallback(
-    async (force = false) => {
-      if (!googleReady || (!connected && !force)) return;
-      setEventsLoading(true);
-      setEventsError("");
-      try {
-        const rangeStart = month.startOf("month").startOf("week");
-        const rangeEnd = month.endOf("month").endOf("week");
-        const sources = [{ id: "primary", label: "Primary" }];
-        if (testCalendarId) {
-          sources.push({ id: testCalendarId, label: TEST_CALENDAR_NAME });
-        }
-        const aggregated = [];
-        let secondaryError = "";
-        for (const source of sources) {
-          const isTestCalendar = Boolean(testCalendarId && source.id === testCalendarId);
-          try {
-            const items = await listMonthEvents({
-              timeMin: rangeStart.toISOString(),
-              timeMax: rangeEnd.toISOString(),
-              calendarId: source.id,
-            });
-            const mapped = (items || []).map((item) => {
-              const startISO = item.start.dateTime || item.start.date;
-              const endISO = item.end?.dateTime || item.end?.date || startISO;
-              const colorId = item.colorId || null;
-              let colorHex = colorId ? GOOGLE_COLOR_MAP[colorId]?.hex || null : null;
-              if (isTestCalendar) {
-                colorHex = TEST_EVENT_COLOR_HEX;
-              }
-              const baseId = item.id || `${startISO}-${endISO}-${Math.random().toString(36).slice(2, 8)}`;
-              return {
-                id: `${source.id}:${baseId}`,
-                googleEventId: item.id || null,
-                calendarId: source.id,
-                calendarSummary: source.label,
-                summary: item.summary || "(No title)",
-                description: item.description || "",
-                startISO,
-                endISO,
-                isAllDay: !item.start.dateTime,
-                colorId: isTestCalendar ? null : colorId,
-                colorHex,
-                isTestEvent: isTestCalendar,
-              };
-            });
-            aggregated.push(...mapped);
-          } catch (sourceError) {
-            if (source.id === "primary") {
-              throw sourceError;
-            }
-            secondaryError = sourceError.message || `Failed to load events from ${TEST_CALENDAR_NAME} calendar`;
-          }
-        }
-        aggregated.sort((a, b) => dayjs(a.startISO).valueOf() - dayjs(b.startISO).valueOf());
-        setCalendarEvents(aggregated);
-        if (secondaryError) {
-          setEventsError(secondaryError);
-        }
-      } catch (error) {
-        setEventsError(error.message || "Failed to load calendar events");
-        setCalendarEvents([]);
-      } finally {
-        setEventsLoading(false);
-      }
-    },
-    [connected, googleReady, month, testCalendarId]
-  );
-
-  useEffect(() => {
-    refreshEvents();
-  }, [refreshEvents]);
 
   const locateTestCalendar = useCallback(async () => {
     try {
@@ -345,13 +247,12 @@ export default function App() {
     try {
       await signIn();
       setConnected(true);
-      refreshEvents(true);
     } catch (error) {
       setGoogleError(error.message || "Failed to connect to Google Calendar");
     } finally {
       setConnecting(false);
     }
-  }, [googleReady, refreshEvents]);
+  }, [googleReady]);
 
   const handleDisconnect = useCallback(() => {
     try {
@@ -362,7 +263,6 @@ export default function App() {
     setConnected(false);
     setTestCalendarId(null);
     setTestCalendarLookupAttempted(false);
-    setCalendarEvents([]);
   }, []);
 
   const handleSaveCfg = useCallback(
@@ -528,7 +428,6 @@ export default function App() {
             : "Event created in Google Calendar";
         setEventFeedback({ type: "success", message: successMessage });
         success = true;
-        refreshEvents(true);
       } catch (error) {
         setEventFeedback({ type: "error", message: error.message || "Failed to create event" });
       } finally {
@@ -536,7 +435,7 @@ export default function App() {
       }
       return success;
     },
-    [locateTestCalendar, refreshEvents, testCalendarId]
+    [locateTestCalendar, testCalendarId]
   );
 
   const surfaceStyle = useMemo(
@@ -597,32 +496,19 @@ export default function App() {
           </div>
         )}
 
-        <main className="grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="flex flex-col gap-6">
-            <LessonsPanel
-              lessons={sortedLessons}
-              onCreate={handleCreateLesson}
-              onEdit={setEditingLesson}
-              onDelete={handleDeleteLesson}
-            />
-            <CreateEventPanel
-              lessons={sortedLessons}
-              onCreate={handleCreateEvent}
-              isConnected={connected}
-              isSubmitting={eventSubmitting}
-              feedback={eventFeedback}
-            />
-          </div>
-
-          <CalendarGrid
-            month={month}
-            events={calendarEvents}
-            loading={eventsLoading}
-            error={eventsError}
-            connected={connected}
-            googleReady={googleReady}
-            onPrev={() => changeMonth(-1)}
-            onNext={() => changeMonth(1)}
+        <main className="flex flex-col gap-6">
+          <LessonsPanel
+            lessons={sortedLessons}
+            onCreate={handleCreateLesson}
+            onEdit={setEditingLesson}
+            onDelete={handleDeleteLesson}
+          />
+          <CreateEventPanel
+            lessons={sortedLessons}
+            onCreate={handleCreateEvent}
+            isConnected={connected}
+            isSubmitting={eventSubmitting}
+            feedback={eventFeedback}
           />
         </main>
       </div>
@@ -650,17 +536,4 @@ export default function App() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
