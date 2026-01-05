@@ -497,18 +497,18 @@ export default function App() {
         )}
 
         <main className="flex flex-col gap-6">
-          <LessonsPanel
-            lessons={sortedLessons}
-            onCreate={handleCreateLesson}
-            onEdit={setEditingLesson}
-            onDelete={handleDeleteLesson}
-          />
           <CreateEventPanel
             lessons={sortedLessons}
             onCreate={handleCreateEvent}
             isConnected={connected}
             isSubmitting={eventSubmitting}
             feedback={eventFeedback}
+          />
+          <LessonsPanel
+            lessons={sortedLessons}
+            onCreate={handleCreateLesson}
+            onEdit={setEditingLesson}
+            onDelete={handleDeleteLesson}
           />
         </main>
       </div>
