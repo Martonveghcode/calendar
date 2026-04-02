@@ -1,9 +1,13 @@
 # Dependencies
 node_modules/
+.vscode/
 
 # Build output
 dist/
 build/
+
+# Local scratch files
+temp_script.py
 
 # Environment and local config
 .env
