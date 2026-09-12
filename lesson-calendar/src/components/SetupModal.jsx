@@ -1,43 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, Save, Upload, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Copy, Download, Upload, X } from "lucide-react";
 
-export default function SetupModal({
-  open,
-  values,
-  onSave,
-  onClose,
-  dataSnapshot,
-  onImportData,
-}) {
-  const [clientId, setClientId] = useState(values?.clientId || "");
-  const [apiKey, setApiKey] = useState(values?.apiKey || "");
-  const [error, setError] = useState("");
+export default function SetupModal({ open, onClose, dataSnapshot, onImportData }) {
   const [importError, setImportError] = useState("");
   const [importSuccess, setImportSuccess] = useState("");
   const fileInputRef = useRef(null);
   const formattedSnapshot = useMemo(() => JSON.stringify(dataSnapshot ?? {}, null, 2), [dataSnapshot]);
 
-  useEffect(() => {
-    if (!open) return;
-    setClientId(values?.clientId || "");
-    setApiKey(values?.apiKey || "");
-    setError("");
-    setImportError("");
-    setImportSuccess("");
-  }, [open, values]);
-
   if (!open) return null;
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-
-    if (!clientId.trim() || !apiKey.trim()) {
-      setError("Both fields are required.");
-      return;
-    }
-
-    onSave({ clientId: clientId.trim(), apiKey: apiKey.trim() });
-  };
 
   const handleExport = () => {
     try {
@@ -78,20 +48,12 @@ export default function SetupModal({
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      if (typeof onImportData !== "function") {
-        throw new Error("Import is not available.");
-      }
-
+      const parsed = JSON.parse(await file.text());
       const result = onImportData(parsed);
-      if (Array.isArray(result) && result.length) {
-        setImportSuccess(`Imported ${result.join(", ")}.`);
-      } else {
-        setImportSuccess("Import completed.");
-      }
+      setImportSuccess(Array.isArray(result) && result.length ? `Imported ${result.join(", ")}.` : "Import completed.");
     } catch (importErr) {
       setImportError(importErr.message || "Failed to import.");
+      setImportSuccess("");
     } finally {
       event.target.value = "";
     }
@@ -101,106 +63,47 @@ export default function SetupModal({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur sm:items-center">
       <div className="app-modal overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
-          <h2 className="app-section-title">Setup</h2>
+          <div>
+            <h2 className="app-section-title">Data backup</h2>
+            <p className="app-meta mt-2">Google connects from the main screen and stays linked in this browser.</p>
+          </div>
 
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="app-button app-button-square"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          <button type="button" onClick={onClose} className="app-button app-button-square" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        <div className="mt-6 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="app-label" htmlFor="clientId">
-                OAuth Client ID
-              </label>
-              <input
-                id="clientId"
-                type="text"
-                value={clientId}
-                onChange={(event) => setClientId(event.target.value)}
-                className="app-field"
-              />
-            </div>
+        <section className="mt-6 space-y-4">
+          <textarea readOnly value={formattedSnapshot} className="app-code" />
 
-            <div className="space-y-2">
-              <label className="app-label" htmlFor="apiKey">
-                API Key
-              </label>
-              <input
-                id="apiKey"
-                type="text"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                className="app-field"
-              />
-            </div>
-
-            {error && <div className="app-alert app-alert-error">{error}</div>}
-
-            <button
-              type="submit"
-              className="app-button app-button-primary w-full"
-            >
-              <Save className="h-4 w-4" />
-              Save credentials
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={handleExport} className="app-button">
+              <Download className="h-4 w-4" />
+              Download
             </button>
-          </form>
 
-          <section className="space-y-4">
-            <textarea
-              readOnly
-              value={formattedSnapshot}
-              className="app-code"
+            <button type="button" onClick={handleCopy} className="app-button">
+              <Copy className="h-4 w-4" />
+              Copy
+            </button>
+
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="app-button app-button-primary">
+              <Upload className="h-4 w-4" />
+              Import
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={handleFileChange}
+              className="hidden"
             />
+          </div>
 
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleExport}
-                className="app-button"
-              >
-                <Download className="h-4 w-4" />
-                Download
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="app-button"
-              >
-                <Copy className="h-4 w-4" />
-                Copy
-              </button>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="app-button app-button-primary"
-              >
-                <Upload className="h-4 w-4" />
-                Import
-              </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json,.json"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </div>
-
-            {importError && <div className="app-alert app-alert-error">{importError}</div>}
-            {importSuccess && <div className="app-alert app-alert-success">{importSuccess}</div>}
-          </section>
-        </div>
+          {importError && <div className="app-alert app-alert-error">{importError}</div>}
+          {importSuccess && <div className="app-alert app-alert-success">{importSuccess}</div>}
+        </section>
       </div>
     </div>
   );

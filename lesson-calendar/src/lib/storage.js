@@ -29,12 +29,8 @@ function write(key, value) {
   }
 }
 
-export function getCfg() {
-  return read(CFG_KEY, null);
-}
-
-export function setCfg(value) {
-  write(CFG_KEY, value);
+export function clearLegacyGoogleCfg() {
+  write(CFG_KEY, null);
 }
 
 export function getLessons() {

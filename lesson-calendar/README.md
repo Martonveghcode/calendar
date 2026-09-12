@@ -1,23 +1,36 @@
-# Lesson Calendar
+# Homework Calendar
 
-Lesson Calendar is a Vite + React + Tailwind single-page app that helps students manage recurring lessons and push Class/Test/Homework events to Google Calendar.
+Homework Calendar is a Vite + React + Tailwind single-page app that stores lesson data locally and creates Class, Test, and Homework events in Google Calendar.
 
-## Google Cloud setup
+## Persistent Google connection
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/), create or select a project.
-2. Enable the **Google Calendar API** under *APIs & Services -> Library*.
-3. Under *APIs & Services -> Credentials* create a **OAuth client ID (Web application)**. Add `http://localhost:5173` to the Authorized JavaScript origins. Note the generated Client ID.
-4. In the same page create an **API key**. Restrict it to the Calendar API if desired.
+The app uses Google's server-side OAuth authorization-code flow. A Netlify Function stores the refresh token inside an encrypted, HttpOnly, same-site cookie and refreshes short-lived Google access tokens automatically. Google credentials and refresh tokens are never stored in browser JavaScript or committed to Git.
+
+Required Netlify environment variables:
+
+- `GOOGLE_CLIENT_ID`: OAuth 2.0 Web application client ID.
+- `GOOGLE_CLIENT_SECRET`: secret for the same OAuth client.
+- `GOOGLE_SESSION_SECRET`: a random secret of at least 32 characters used to encrypt the session cookie.
+
+In Google Cloud Console:
+
+1. Enable the Google Calendar API.
+2. Configure the Google Auth Platform consent screen and add your Google account as a test user if the app remains in Testing.
+3. Create an OAuth 2.0 Client ID of type **Web application**.
+4. Add `https://glittery-blini-4c6ea4.netlify.app/api/google-auth-callback` as an authorized redirect URI.
+5. For local Netlify development, optionally add `http://localhost:8888/api/google-auth-callback` too.
+
+Apps left in Google's Testing publishing status lose Calendar refresh-token authorization after seven days. Set the app to In production for a lasting connection. Google may still show an unverified-app warning for a personal app that uses Calendar scopes.
 
 ## Local development
 
 1. Install dependencies with `npm install`.
-2. Run `npm run dev` (or press **F5** in VS Code) to start Vite.
-3. Your browser should open `http://localhost:5173` automatically.
+2. Set the three environment variables above in a local `.env` file (never commit it).
+3. Run `npx netlify dev` so the frontend and OAuth functions run together.
 
-## First run
+## Build and test
 
-1. When the app loads, enter the Google OAuth Client ID and API Key in the setup modal.
-2. Click **Connect Google** in the top bar and finish the OAuth consent flow.
-3. Add your lessons and weekly slots, then use the Create Event panel to push items to Google Calendar.
-4. Optional: use the **Appearance** section in Settings to tweak background, card, border, accent, and text colors. Once connected, the app will remember the connection and attempt to auto-connect next time.
+```sh
+npm test
+npm run build
+```

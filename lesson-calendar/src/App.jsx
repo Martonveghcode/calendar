@@ -2,17 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { LogIn, LogOut, Plus, Settings } from "lucide-react";
 import {
-  loadGoogle,
+  getGoogleSession,
   signIn,
   signOut,
   insertEvent,
   listCalendars,
 } from "./lib/google";
 import {
-  getCfg,
-  setCfg,
   getLessons,
   setLessons,
+  clearLegacyGoogleCfg,
 } from "./lib/storage";
 import { uid } from "./lib/ui";
 import { GOOGLE_COLOR_MAP } from "./lib/constants";
@@ -92,16 +91,11 @@ const prepareLessonsFromFile = (lessons) => {
 };
 
 export default function App() {
-  const [cfg, setCfgState] = useState(() => getCfg());
-  const [setupOpen, setSetupOpen] = useState(() => {
-    const stored = getCfg();
-    return !stored?.clientId || !stored?.apiKey;
-  });
+  const [setupOpen, setSetupOpen] = useState(false);
   const [lessons, setLessonsState] = useState(() => getLessons().map(normalizeLesson));
   const [editingLesson, setEditingLesson] = useState(null);
 
-  const [googleReady, setGoogleReady] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(true);
   const [googleError, setGoogleError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -115,15 +109,14 @@ export default function App() {
   const sortedLessons = useMemo(() => [...lessons].sort((a, b) => a.name.localeCompare(b.name)), [lessons]);
   const dataSnapshot = useMemo(
     () => ({
-      cfg: cfg ? { ...cfg } : null,
       lessons: lessons.map((lesson) => ({ ...lesson })),
     }),
-    [cfg, lessons]
+    [lessons]
   );
 
   useEffect(() => {
-    setCfg(cfg);
-  }, [cfg]);
+    clearLegacyGoogleCfg();
+  }, []);
 
   useEffect(() => {
     setLessons(lessons);
@@ -132,45 +125,55 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    if (cfg?.clientId && cfg?.apiKey) {
-      setGoogleLoading(true);
-      setGoogleError("");
-      loadGoogle(cfg)
-        .then(() => {
-          if (!cancelled) {
-            setGoogleReady(true);
-          }
-        })
-        .catch((error) => {
-          if (!cancelled) {
-            setGoogleError(error.message || "Failed to load Google libraries");
-            setGoogleReady(false);
-          }
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setGoogleLoading(false);
-          }
-        });
-    } else {
-      setGoogleReady(false);
-    }
+    setGoogleLoading(true);
+    setGoogleError("");
+    getGoogleSession()
+      .then((isConnected) => {
+        if (!cancelled) {
+          setConnected(isConnected);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setConnected(false);
+          setGoogleError(error.message || "Failed to check the Google connection");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setGoogleLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [cfg]);
+  }, []);
 
   useEffect(() => {
-    if (!cfg?.clientId || !cfg?.apiKey) {
-      try {
-        signOut();
-      } catch (_) {
-        /* ignore */
-      }
+    const handleExpiredConnection = (event) => {
       setConnected(false);
+      setTestCalendarId(null);
+      setTestCalendarLookupAttempted(false);
+      setGoogleError(event.detail || "Your Google connection expired. Please connect again.");
+    };
+
+    window.addEventListener("google-connection-expired", handleExpiredConnection);
+    return () => window.removeEventListener("google-connection-expired", handleExpiredConnection);
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const googleResult = url.searchParams.get("google");
+    if (!googleResult) return;
+
+    if (googleResult === "error") {
+      setGoogleError("Google could not be connected. Please try again.");
     }
-  }, [cfg]);
+
+    url.searchParams.delete("google");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   const locateTestCalendar = useCallback(async () => {
     try {
@@ -211,44 +214,26 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [eventFeedback]);
 
-  const connectGoogle = useCallback(async () => {
-    if (!googleReady) {
-      setGoogleError("Add your Google API credentials first");
-      setSetupOpen(true);
-      return;
-    }
+  const connectGoogle = useCallback(() => {
+    setConnecting(true);
+    setGoogleError("");
+    signIn();
+  }, []);
 
+  const handleDisconnect = useCallback(async () => {
     setConnecting(true);
     setGoogleError("");
     try {
-      await signIn();
-      setConnected(true);
+      await signOut();
+      setConnected(false);
+      setTestCalendarId(null);
+      setTestCalendarLookupAttempted(false);
     } catch (error) {
-      setGoogleError(error.message || "Failed to connect to Google Calendar");
+      setGoogleError(error.message || "Failed to disconnect Google Calendar");
     } finally {
       setConnecting(false);
     }
-  }, [googleReady]);
-
-  const handleDisconnect = useCallback(() => {
-    try {
-      signOut();
-    } catch (_) {
-      /* ignore */
-    }
-    setConnected(false);
-    setTestCalendarId(null);
-    setTestCalendarLookupAttempted(false);
   }, []);
-
-  const handleSaveCfg = useCallback(
-    (nextCfg) => {
-      setCfgState(nextCfg);
-      setSetupOpen(false);
-      handleDisconnect();
-    },
-    [handleDisconnect]
-  );
 
   const handleCreateLesson = useCallback(() => {
     const now = dayjs();
@@ -313,25 +298,7 @@ export default function App() {
       const applied = [];
 
       if (Object.prototype.hasOwnProperty.call(payload, "cfg")) {
-        const incomingCfg = payload.cfg;
-        if (incomingCfg === null) {
-          setCfgState(null);
-          applied.push("credentials");
-          handleDisconnect();
-        } else if (incomingCfg && typeof incomingCfg === "object") {
-          const clientId = typeof incomingCfg.clientId === "string" ? incomingCfg.clientId.trim() : "";
-          const apiKey = typeof incomingCfg.apiKey === "string" ? incomingCfg.apiKey.trim() : "";
-
-          if (!clientId || !apiKey) {
-            throw new Error("Credentials must include non-empty clientId and apiKey strings.");
-          }
-
-          setCfgState({ clientId, apiKey });
-          applied.push("credentials");
-          handleDisconnect();
-        } else {
-          throw new Error("Credentials section must be an object with clientId and apiKey.");
-        }
+        applied.push("legacy data (browser credentials skipped)");
       }
 
       if (Object.prototype.hasOwnProperty.call(payload, "lessons")) {
@@ -342,12 +309,12 @@ export default function App() {
       }
 
       if (!applied.length) {
-        throw new Error("The file does not include any recognized sections (cfg, lessons).");
+        throw new Error("The file does not include a lessons section.");
       }
 
       return applied;
     },
-    [handleDisconnect]
+    []
   );
 
   const handleCreateEvent = useCallback(
@@ -429,13 +396,14 @@ export default function App() {
                 className="app-button"
               >
                 <Settings className="h-4 w-4" />
-                Setup
+                Data
               </button>
 
               {connected ? (
                 <button
                   type="button"
                   onClick={handleDisconnect}
+                  disabled={connecting}
                   className="app-button"
                 >
                   <LogOut className="h-4 w-4" />
@@ -486,9 +454,7 @@ export default function App() {
 
       <SetupModal
         open={setupOpen}
-        values={cfg}
-        onSave={handleSaveCfg}
-        onClose={!cfg ? undefined : () => setSetupOpen(false)}
+        onClose={() => setSetupOpen(false)}
         dataSnapshot={dataSnapshot}
         onImportData={handleImportData}
       />
