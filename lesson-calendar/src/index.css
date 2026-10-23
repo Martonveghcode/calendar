@@ -237,3 +237,29 @@ textarea:focus-visible {
     color: var(--theme-muted);
   }
 }
+
+.site-credit {
+  position: relative;
+  z-index: 1;
+  padding: 16px 24px 24px;
+  color: var(--theme-muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.site-credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.site-credit a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.site-credit a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
